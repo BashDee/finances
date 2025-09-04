@@ -1,0 +1,567 @@
+
+
+
+<template>
+    <div class="wants">
+      <div class="header">
+        <h1><i class="fas fa-heart"></i> Wants Management</h1>
+        <button @click="showForm = !showForm" class="btn btn-primary">
+          <i class="fas fa-plus"></i> Add Want
+        </button>
+      </div>
+  
+      <!-- Add/Edit Form -->
+      <div v-if="showForm" class="form-card">
+        <h2>{{ editingWant ? 'Edit Want' : 'Add New Want' }}</h2>
+        <form @submit.prevent="saveWant">
+          <div class="form-group">
+            <label for="name">Name</label>
+            <input v-model="form.name" type="text" id="name" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="amount">Target Amount</label>
+            <input v-model.number="form.amount" type="number" id="amount" step="0.01" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="category">Category</label>
+            <select v-model="form.category" id="category" required>
+              <option value="entertainment">Entertainment</option>
+              <option value="shopping">Shopping</option>
+              <option value="dining">Dining</option>
+              <option value="travel">Travel</option>
+              <option value="hobbies">Hobbies</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="priority">Priority</label>
+            <select v-model="form.priority" id="priority" required>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="targetDate">Target Date (Optional)</label>
+            <input v-model="form.targetDate" type="date" id="targetDate">
+          </div>
+          
+          <div class="form-group">
+            <label for="savedAmount">Amount Saved</label>
+            <input v-model.number="form.savedAmount" type="number" id="savedAmount" step="0.01" min="0" required>
+          </div>
+          
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input v-model="form.isSaved" type="checkbox" id="isSaved">
+              <span>Mark as Saved</span>
+            </label>
+          </div>
+          
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">
+              <i class="fas fa-save"></i> {{ editingWant ? 'Update' : 'Save' }}
+            </button>
+            <button type="button" @click="cancelForm" class="btn btn-secondary">
+              <i class="fas fa-times"></i> Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+  
+      <!-- Filter and Sort -->
+      <div class="filters">
+        <div class="filter-group">
+          <label for="filterCategory">Filter by Category:</label>
+          <select v-model="filterCategory" id="filterCategory">
+            <option value="">All Categories</option>
+            <option value="entertainment">Entertainment</option>
+            <option value="shopping">Shopping</option>
+            <option value="dining">Dining</option>
+            <option value="travel">Travel</option>
+            <option value="hobbies">Hobbies</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label for="filterStatus">Filter by Status:</label>
+          <select v-model="filterStatus" id="filterStatus">
+            <option value="">All</option>
+            <option value="saved">Saved</option>
+            <option value="saving">Saving</option>
+          </select>
+        </div>
+      </div>
+  
+      <!-- Wants List -->
+      <div class="wants-list">
+        <div v-if="filteredWants.length === 0" class="empty-state">
+          <i class="fas fa-heart"></i>
+          <h3>No wants found</h3>
+          <p>{{ filterCategory || filterStatus ? 'Try adjusting your filters' : 'Create your first want to get started' }}</p>
+        </div>
+        
+        <div v-else v-for="want in filteredWants" :key="want.id" class="want-item" :class="{ 'saved': want.isSaved }">
+          <div class="want-info">
+            <div class="want-header">
+              <h3>{{ want.name }}</h3>
+              <span class="priority-badge" :class="want.priority">{{ want.priority }}</span>
+            </div>
+            <p class="category">{{ want.category }}</p>
+            <p v-if="want.targetDate" class="target-date">
+              <i class="fas fa-calendar"></i> Target: {{ formatDate(want.targetDate) }}
+            </p>
+          </div>
+          
+          <div class="want-progress">
+            <div class="progress-info">
+              <span class="saved-amount">${{ want.savedAmount.toFixed(2) }}</span>
+              <span class="target-amount">of ${{ want.amount.toFixed(2) }}</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" :style="{ width: progressPercentage(want) + '%' }"></div>
+            </div>
+            <div class="progress-text">
+              {{ Math.round(progressPercentage(want)) }}% complete
+            </div>
+          </div>
+          
+          <div class="want-status">
+            <span class="status-badge" :class="{ 'saved': want.isSaved, 'saving': !want.isSaved }">
+              {{ want.isSaved ? 'Saved' : 'Saving' }}
+            </span>
+          </div>
+          
+          <div class="want-actions">
+            <button @click="editWant(want)" class="btn btn-sm btn-outline">
+              <i class="fas fa-edit"></i> Edit
+            </button>
+            <button @click="deleteWant(want.id)" class="btn btn-sm btn-danger">
+              <i class="fas fa-trash"></i> Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+  
+  <script setup lang="ts">
+  import { ref, reactive, computed, onMounted } from 'vue'
+  import { useFinanceStore } from '@/stores/finance'
+  import type { Want } from '@/types'
+  
+  const store = useFinanceStore()
+  const showForm = ref(false)
+  const editingWant = ref<Want | null>(null)
+  const filterCategory = ref('')
+  const filterStatus = ref('')
+  
+  const form = reactive({
+    name: '',
+    amount: 0,
+    category: 'other' as Want['category'],
+    priority: 'medium' as Want['priority'],
+    targetDate: '',
+    savedAmount: 0,
+    isSaved: false
+  })
+  
+  const filteredWants = computed(() => {
+    let filtered = store.wants
+    
+    if (filterCategory.value) {
+      filtered = filtered.filter(want => want.category === filterCategory.value)
+    }
+    
+    if (filterStatus.value) {
+      const isSaved = filterStatus.value === 'saved'
+      filtered = filtered.filter(want => want.isSaved === isSaved)
+    }
+    
+    return filtered.sort((a, b) => {
+      // Sort by priority first (high > medium > low)
+      const priorityOrder = { high: 3, medium: 2, low: 1 }
+      const priorityDiff = priorityOrder[b.priority] - priorityOrder[a.priority]
+      if (priorityDiff !== 0) return priorityDiff
+      
+      // Then by progress (lower progress first)
+      const progressA = a.savedAmount / a.amount
+      const progressB = b.savedAmount / b.amount
+      return progressA - progressB
+    })
+  })
+  
+  const saveWant = () => {
+    const wantData = {
+      ...form,
+      targetDate: form.targetDate ? new Date(form.targetDate) : undefined
+    }
+    
+    if (editingWant.value) {
+      store.updateWant(editingWant.value.id, wantData)
+    } else {
+      store.addWant(wantData)
+    }
+    resetForm()
+    showForm.value = false
+  }
+  
+  const editWant = (want: Want) => {
+    editingWant.value = want
+    Object.assign(form, {
+      name: want.name,
+      amount: want.amount,
+      category: want.category,
+      priority: want.priority,
+      targetDate: want.targetDate ? want.targetDate.toISOString().split('T')[0] : '',
+      savedAmount: want.savedAmount,
+      isSaved: want.isSaved
+    })
+    showForm.value = true
+  }
+  
+  const deleteWant = (id: string) => {
+    if (confirm('Are you sure you want to delete this want?')) {
+      store.deleteWant(id)
+    }
+  }
+  
+  const cancelForm = () => {
+    resetForm()
+    showForm.value = false
+  }
+  
+  const resetForm = () => {
+    editingWant.value = null
+    Object.assign(form, {
+      name: '',
+      amount: 0,
+      category: 'other',
+      priority: 'medium',
+      targetDate: '',
+      savedAmount: 0,
+      isSaved: false
+    })
+  }
+  
+  const formatDate = (date: Date) => {
+    return new Date(date).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    })
+  }
+  
+  const progressPercentage = (want: Want) => {
+    if (want.amount === 0) return 0
+    return Math.min((want.savedAmount / want.amount) * 100, 100)
+  }
+  </script>
+  
+  <style scoped>
+  .wants .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
+  
+  .wants h1 {
+    color: #2c3e50;
+    margin: 0;
+  }
+  
+  .btn {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s;
+  }
+  
+  .btn-primary {
+    background: #9b59b6;
+    color: white;
+  }
+  
+  .btn-primary:hover {
+    background: #8e44ad;
+  }
+  
+  .btn-secondary {
+    background: #95a5a6;
+    color: white;
+  }
+  
+  .btn-secondary:hover {
+    background: #7f8c8d;
+  }
+  
+  .btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+  }
+  
+  .btn-outline {
+    background: transparent;
+    border: 1px solid #9b59b6;
+    color: #9b59b6;
+  }
+  
+  .btn-outline:hover {
+    background: #9b59b6;
+    color: white;
+  }
+  
+  .btn-danger {
+    background: #e74c3c;
+    color: white;
+  }
+  
+  .btn-danger:hover {
+    background: #c0392b;
+  }
+  
+  .form-card {
+    background: white;
+    border-radius: 8px;
+    padding: 2rem;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 2rem;
+  }
+  
+  .form-card h2 {
+    margin-top: 0;
+    color: #2c3e50;
+  }
+  
+  .form-group {
+    margin-bottom: 1.5rem;
+  }
+  
+  .form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #2c3e50;
+    font-weight: 500;
+  }
+  
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+  }
+  
+  .checkbox-label input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+  }
+  
+  .form-group input,
+  .form-group select {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 1rem;
+  }
+  
+  .form-group input:focus,
+  .form-group select:focus {
+    outline: none;
+    border-color: #9b59b6;
+    box-shadow: 0 0 0 2px rgba(155, 89, 182, 0.2);
+  }
+  
+  .form-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 2rem;
+  }
+  
+  .filters {
+    display: flex;
+    gap: 2rem;
+    margin-bottom: 2rem;
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  }
+  
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .filter-group label {
+    font-weight: 500;
+    color: #2c3e50;
+  }
+  
+  .filter-group select {
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    min-width: 150px;
+  }
+  
+  .wants-list {
+    display: grid;
+    gap: 1rem;
+  }
+  
+  .empty-state {
+    text-align: center;
+    padding: 3rem;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    color: #7f8c8d;
+  }
+  
+  .empty-state i {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    display: block;
+  }
+  
+  .want-item {
+    background: white;
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    display: grid;
+    grid-template-columns: 1fr 1fr auto auto;
+    gap: 1rem;
+    align-items: center;
+    transition: all 0.3s;
+  }
+  
+  .want-item.saved {
+    opacity: 0.7;
+    background: #f8f9fa;
+  }
+  
+  .want-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  
+  .want-header h3 {
+    margin: 0;
+    color: #2c3e50;
+  }
+  
+  .priority-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-transform: uppercase;
+  }
+  
+  .priority-badge.high {
+    background: #9b59b6;
+    color: white;
+  }
+  
+  .priority-badge.medium {
+    background: #f39c12;
+    color: white;
+  }
+  
+  .priority-badge.low {
+    background: #27ae60;
+    color: white;
+  }
+  
+  .want-info p {
+    margin: 0.25rem 0;
+    color: #7f8c8d;
+    font-size: 0.9rem;
+  }
+  
+  .want-info .target-date {
+    color: #9b59b6;
+    font-weight: 500;
+  }
+  
+  .want-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .progress-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .saved-amount {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #2c3e50;
+  }
+  
+  .target-amount {
+    color: #7f8c8d;
+    font-size: 0.9rem;
+  }
+  
+  .progress-bar {
+    width: 100%;
+    height: 8px;
+    background: #ecf0f1;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #9b59b6, #8e44ad);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+  
+  .progress-text {
+    font-size: 0.8rem;
+    color: #7f8c8d;
+    text-align: center;
+  }
+  
+  .status-badge {
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+  
+  .status-badge.saved {
+    background: #27ae60;
+    color: white;
+  }
+  
+  .status-badge.saving {
+    background: #f39c12;
+    color: white;
+  }
+  
+  .want-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  </style>
