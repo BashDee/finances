@@ -37,7 +37,7 @@
           <div class="card-value">${{ summary.remainingBudget.toFixed(2) }}</div>
         </div>
       </div>
-  
+      
       <div class="recent-activity">
         <h2>Recent Activity</h2>
         <div class="activity-list">
@@ -56,15 +56,31 @@
           </div>
         </div>
       </div>
+
+      <!-- Floating Add-Transaction Button -->
+      <button class="fab" :class="{ open: showTransactionForm }" @click="toggleForm">
+        <i class="fas fa-plus"></i>
+      </button>
+
+      <!-- QuickTransaction component appears when toggled -->
+      <Transaction
+            v-if="showTransactionForm"
+            @close="showTransactionForm = false"
+      />
     </div>
   </template>
   
   <script setup lang="ts">
-  import { computed } from 'vue'
+  import { computed, ref } from 'vue'
   import { useFinanceStore } from '@/stores/finance'
   import type { Budget, Need, Want } from '@/types'
+  import Transaction from './Transactions.vue'
   
   const store = useFinanceStore()
+  const showTransactionForm = ref(false)
+  const toggleForm = () => {
+  showTransactionForm.value = !showTransactionForm.value
+    }
   
   const summary = computed(() => store.summary)
   
@@ -80,6 +96,8 @@
     return combined
   })
   
+  
+
   const getIconClass = (type: string) => {
     switch (type) {
       case 'budget': return 'fas fa-calculator'
@@ -105,7 +123,8 @@
   }
   
   .summary-cards {
-    display: grid;
+    flex-wrap: wrap;
+    display: flex;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: 1.5rem;
     margin-bottom: 3rem;
@@ -214,4 +233,28 @@
     color: #7f8c8d;
     font-size: 0.9rem;
   }
+
+  /* Floating Action Button */
+.fab {
+  position: fixed;
+  right: 2rem;
+  bottom: 2rem;
+  width: 56px;
+  height: 56px;
+  background: #3498db;
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  cursor: pointer;
+  z-index: 1000;
+  transition: transform 0.3s ease;
+}
+.fab.open {
+  transform: rotate(45deg);
+}
   </style>
