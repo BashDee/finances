@@ -9,7 +9,7 @@
         <div class="form-grid">
           <div class="form-group">
             <label for="type">Type</label><br />
-            <select id="transactionType" v-model="transactionForm.type" required>
+            <select id="transactionType" v-model="transactionForm.transaction_type" required>
               <option value="income">Income</option>
               <option value="expense">Expense</option>
             </select>
@@ -42,13 +42,13 @@
           </div>
       
           <div class="form-group">
-            <label for="transactionDate">Date</label>
-            <input v-model="transactionForm.date" type="date" id="transactionDate" required />
+            <label for="transactionDate">Transaction Date</label>
+            <input v-model="transactionForm.transaction_date" type="date" id="transactionDate" required />
           </div>
 
           <div class="form-group">
             <label for="notes">Notes (Optional)</label>
-            <input v-model="transactionForm.notes" type="text" id="transactionNotes" />
+            <input v-model="transactionForm.note" type="text" id="transactionNotes" />
           </div>
         </div>
         <!-- status message -->
@@ -63,8 +63,8 @@
           <button type="submit" class="btn btn-success">
             Submit
           </button>
-          <button type="button" class="btn btn-cancel" @click="$emit('close')">
-            Cancel
+          <button type="button" class="btn btn-cancel" @click="resetForm">
+            Reset
           </button>
         </div>
       </form>
@@ -74,55 +74,79 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-  import { useFinanceStore } from '@/stores/finance'
+import { useFinanceStore } from '@/stores/finance'
   
   const store = useFinanceStore()
   const loading = ref(false)
   const transactionMessage = ref<{ type: 'success'|'error'; text: string }|null>(null)
   
   const transactionForm = reactive({
-    type: 'expense' as 'income'|'expense',
+    transaction_type: 'expense' as 'income'|'expense',
     amount: 0,
     description: '',
-    category: '',
-    date: new Date().toISOString().split('T')[0],
-    notes: ''
+    category_id: 1,
+    transaction_date: new Date().toISOString().split('T')[0],
+    note: ''
   })
   
+
+
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
   const addTransaction = async () => {
     loading.value = true
     transactionMessage.value = null
-    try {
-      const payload = {
-        id: String(Date.now()),
-        ...transactionForm,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/transactions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      })
-      if (!res.ok) throw new Error(res.statusText)
-      store.addTransaction(payload)
-      transactionMessage.value = { type: 'success', text: 'Added!' }
-      resetForm()
-    } catch {
-      transactionMessage.value = { type: 'error', text: 'Failed to add.' }
-    } finally {
-      loading.value = false
-    }
+
+  // Validate required fields
+  if (!transactionForm.amount || !transactionForm.description || !transactionForm.category_id) {
+    transactionMessage.value = { type: 'error', text: 'Please fill all required fields.' }
+    loading.value = false
+    return
   }
+
+  try {
+    const payload = {
+      user_id: 1, // TODO: replace with actual logged-in user
+      ...transactionForm,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+
+    const res = await fetch(`${API_URL}/api/v1/transaction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+
+    let data
+    try {
+      data = await res.json()
+    } catch {
+      data = null
+    }
+
+    if (!res.ok) {
+      throw new Error(data?.message || res.statusText)
+    }
+
+    transactionMessage.value = { type: 'success', text: 'Transaction added successfully!' }
+    resetForm()
+  } catch (err: any) {
+    transactionMessage.value = { type: 'error', text: 'Failed to add. ' + (err?.message || '') }
+  } finally {
+    loading.value = false
+  }
+}
+
   
   const resetForm = () => {
     Object.assign(transactionForm, {
-      type: 'expense',
+      transaction_type: 'expense',
       amount: 0,
       description: '',
-      category: '',
-      date: new Date().toISOString().split('T')[0],
-      notes: ''
+      category_id: '',
+      transaction_date: new Date().toISOString().split('T')[0],
+      note: ''
     })
     transactionMessage.value = null
   }
@@ -212,4 +236,14 @@ import { ref, reactive, onMounted } from 'vue'
   background-color: #dc3545;
   color: #fff;
 }
+.message {
+    display: flex; align-items: center; gap: .5rem;
+    margin-bottom: 1rem; padding: 1rem; border-radius: 4px;
+  }
+  .message.success {
+    background: #d4edda; color: #155724; border-left: 4px solid #28a745;
+  }
+  .message.error {
+    background: #f8d7da; color: #721c24; border-left: 4px solid #dc3545;
+  }
 </style>
